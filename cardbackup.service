@@ -1,0 +1,14 @@
+[Unit]
+Description=Card backup service
+Wants=systemd-modules-load.service
+After=systemd-modules-load.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/go/src/cardbackup
+ExecStart=/home/pi/go/src/cardbackup/cardbackup
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

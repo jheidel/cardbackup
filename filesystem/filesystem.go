@@ -74,7 +74,7 @@ func scanAll() ([]*Filesystem, error) {
 	// Parse output.
 	for _, line := range lines[1:] {
 		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		if strings.TrimSpace(line) == "" || len(fields) == 0 {
 			continue
 		}
 		if len(fields) < 6 {
