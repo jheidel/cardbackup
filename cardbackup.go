@@ -2,13 +2,19 @@ package main
 
 import (
 	"cardbackup/backup"
+	"cardbackup/display"
 	"cardbackup/filesystem"
 
-	"github.com/davecgh/go-spew/spew"
+	//"github.com/davecgh/go-spew/spew"
 	log "github.com/sirupsen/logrus"
 )
 
-func main() {
+func doWork() {
+	lcd, err := lcd.NewDisplay()
+	if err != nil {
+		panic(err)
+	}
+	defer lcd.Close()
 
 	fw, err := filesystem.NewWatcher()
 	if err != nil {
@@ -19,7 +25,6 @@ func main() {
 	defer fwl.Close()
 
 	var fss *filesystem.Filesystems
-
 waitStart:
 	for {
 		select {
@@ -33,8 +38,8 @@ waitStart:
 
 	ch := make(chan *backup.BackupProgress, 0)
 	go func() {
-		for p := range ch {
-			spew.Dump(p)
+		for _ = range ch {
+			//spew.Dump(p)
 		}
 
 	}()
@@ -43,4 +48,9 @@ waitStart:
 		panic(err)
 	}
 	log.Info("Done!")
+}
+
+func main() {
+	doWork()
+	log.Info("Back in main!")
 }

@@ -106,12 +106,14 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 
 	cmd := exec.Command("rsync", "-av", "--info=progress2", "--no-i-r", src, dst)
 
-	_ = os.Mkdir(dst, 07777)
+	if err := os.Mkdir(dst, 0777); err != nil {
+		return fmt.Errorf("creating log dir: %v", err)
+	}
 	logfile, err := os.Create(path.Join(dst, "rsync.log"))
 	if err != nil {
 		return fmt.Errorf("opening log: %v", err)
 	}
-	logw := bufio.NewWriter(logfile)
+	logw := bufio.NewWriterSize(logfile, 4096)
 	logl := &sync.Mutex{}
 
 	flusher := time.NewTicker(10 * time.Second)
@@ -130,8 +132,6 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 		return err
 	}
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
 	stdout := bufio.NewScanner(r)
 	stdout.Split(scanLines)
 	go func() {
@@ -147,11 +147,9 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 				}
 			}
 		}
-		wg.Done()
 	}()
 
 	r, err = cmd.StderrPipe()
-	wg.Add(1)
 	if err != nil {
 		return err
 	}
@@ -162,7 +160,6 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 			logw.WriteString(stderr.Text() + "\n")
 			logl.Unlock()
 		}
-		wg.Done()
 	}()
 
 	if err := cmd.Start(); err != nil {
@@ -170,10 +167,14 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	}
 
 	status := cmd.Wait()
+	log.Infof("rsync command completed with status %v", err)
 
 	flusher.Stop()
-	wg.Wait()
 
+	logl.Lock()
+	defer logl.Unlock()
+
+	log.Info("flushing log file")
 	if err := logw.Flush(); err != nil {
 		return fmt.Errorf("flushing log: %v", err)
 	}
@@ -186,6 +187,7 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	}
 
 	// Mark as done on source filesystem.
+	log.Info("writing completion marker")
 	if err := fs.Src.WriteCompletionMarker(); err != nil {
 		return fmt.Errorf("writing completion marker: %v", err)
 	}

@@ -16,7 +16,7 @@ const (
 type Watcher struct {
 	addl, removel chan *WatcherListener
 	listeners     map[*WatcherListener]bool
-	tick          <-chan time.Time
+	timer         *time.Timer
 
 	fw *fsnotify.Watcher
 }
@@ -38,6 +38,7 @@ func NewWatcher() (*Watcher, error) {
 		addl:      make(chan *WatcherListener),
 		removel:   make(chan *WatcherListener),
 		listeners: make(map[*WatcherListener]bool),
+		timer:     time.NewTimer(ScanPeriod),
 		fw:        fw,
 	}
 	go w.loop()
@@ -65,11 +66,11 @@ func (w *Watcher) loop() {
 			w.scan() // so it gets results right away
 		case wl := <-w.removel:
 			delete(w.listeners, wl)
-		case _ = <-w.tick:
+		case _ = <-w.timer.C:
 			w.scan()
 		case e := <-w.fw.Events:
 			log.Infof("Scanning filesystem due to event: %v", spew.Sdump(e))
-			w.tick = time.After(1 * time.Second)
+			w.timer = time.NewTimer(1 * time.Second)
 		}
 	}
 }
@@ -81,9 +82,12 @@ func (w *Watcher) scan() {
 		return
 	}
 	for l, _ := range w.listeners {
-		l.Filesystems <- r
+		select {
+		case l.Filesystems <- r:
+		default:
+		}
 	}
 
 	// schedule next run
-	w.tick = time.After(ScanPeriod)
+	w.timer = time.NewTimer(ScanPeriod)
 }
