@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,8 @@ type Display struct {
 	fs       *filesystem.Filesystems
 	p        *backup.BackupProgress
 	txfrDone bool
+	drawErr  error
+	drawErrT time.Time
 
 	done chan chan bool
 }
@@ -63,18 +66,26 @@ func (d *Display) SetProgress(p *backup.BackupProgress) {
 	d.p = p
 }
 
-func (d *Display) SetDone() {
+func (d *Display) SetProgressDone() {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	d.p.Percent = 100
 	d.txfrDone = true
 }
 
-func (d *Display) ClearProgress() {
+func (d *Display) ResetState() {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	d.txfrDone = false
 	d.p = nil
+	d.drawErr = nil
+}
+
+func (d *Display) SetError(err error) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	d.drawErr = err
+	d.drawErrT = time.Now()
 }
 
 func (d *Display) cleanup() error {
@@ -225,17 +236,54 @@ func (d *Display) page2() *image.RGBA {
 	l4 := fmt.Sprintf("Drive: %s", fsStatus(d.fs.Dst))
 	addLabel(img, l4, 0, 14*4)
 	return img
+}
 
+func (d *Display) pageError() *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 128, 64))
+
+	d.lock.Lock()
+	defer d.lock.Unlock()
+
+	msg := fmt.Sprintf("ERROR! %s", d.drawErr)
+
+	t := int64(time.Now().Sub(d.drawErrT).Seconds())
+	if t%7 == 4 || t%7 == 5 || t%7 == 6 {
+		msg = "Disconnect and reconnect the card to try again."
+	}
+
+	words := strings.Fields(msg)
+	dr := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(color.RGBA{255, 255, 255, 255}),
+		Face: basicfont.Face7x13,
+		Dot:  fixed.P(0, 14),
+	}
+
+	row := 1
+	for _, w := range words {
+		if row > 4 {
+			break
+		}
+		advance := dr.MeasureString(w)
+		if dr.Dot.X+advance > fixed.I(128) {
+			row += 1
+			dr.Dot = fixed.P(0, row*14)
+		}
+		dr.DrawString(w + " ")
+	}
+	return img
 }
 
 func (d *Display) makeImage() *image.RGBA {
 	switch {
+	case d.drawErr != nil:
+		return d.pageError()
 	case d.fs.Dst == nil:
 		return d.page1("* Connect Drive *")
 	case d.fs.Src == nil:
 		return d.page1("* Connect Card *")
 	case d.p == nil:
-		return d.page1("Please Wait...")
+		return d.page1("Starting...")
 	default:
 		return d.page2()
 	}

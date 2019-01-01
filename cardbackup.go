@@ -6,11 +6,10 @@ import (
 	"cardbackup/filesystem"
 	"time"
 
-	//"github.com/davecgh/go-spew/spew"
 	log "github.com/sirupsen/logrus"
 )
 
-func doWork() {
+func loop() {
 	lcd, err := lcd.NewDisplay()
 	if err != nil {
 		panic(err)
@@ -29,29 +28,36 @@ func doWork() {
 		}
 	}()
 
-	fwl := fw.NewListener()
-	defer fwl.Close()
+	for {
+		lcd.ResetState()
 
-	fss := <-filesystem.AfterConnect(fw)
+		fss := <-filesystem.AfterConnect(fw)
 
-	ch := make(chan *backup.BackupProgress, 0)
-	go func() {
-		for {
-			lcd.SetProgress(<-ch)
+		// Short delay before starting to user can look at screen.
+		time.Sleep(5 * time.Second)
+
+		ch := make(chan *backup.BackupProgress)
+		go func() {
+			for {
+				lcd.SetProgress(<-ch)
+			}
+		}()
+
+		if err := backup.Backup(fss, ch); err != nil {
+			// TODO print error to LCD.
+			log.Errorf("Backup error: %v", err)
+			lcd.SetError(err)
+		} else {
+			log.Info("Done with backup!")
+			lcd.SetProgressDone()
 		}
-	}()
 
-	if err := backup.Backup(fss, ch); err != nil {
-		panic(err)
+		<-filesystem.AfterDisconnect(fw)
 	}
-	log.Info("Done!")
-
-	lcd.SetDone()
-
-	time.Sleep(30 * time.Second)
 }
 
 func main() {
-	doWork()
-	log.Info("Back in main!")
+	log.Info("Start cardbackup")
+	loop()
+	log.Info("Quit cardbackup")
 }
