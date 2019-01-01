@@ -100,6 +100,9 @@ func scanAll() ([]*Filesystem, error) {
 			Available: avail,
 			Path:      fields[5],
 		}
+		if fs.Path == "/" {
+			continue
+		}
 		cm, err := hasMarker(fs)
 		if err != nil {
 			return []*Filesystem{}, fmt.Errorf("reading completion marker: %v", err)

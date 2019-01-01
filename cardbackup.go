@@ -9,16 +9,26 @@ import (
 )
 
 func main() {
-	fss, err := filesystem.Scan()
+
+	fw, err := filesystem.NewWatcher()
 	if err != nil {
 		panic(err)
 	}
 
-	spew.Dump(fss)
+	fwl := fw.NewListener()
+	defer fwl.Close()
 
-	if fss.Src.CompletionMarker {
-		log.Info("Already done.")
-		return
+	var fss *filesystem.Filesystems
+
+waitStart:
+	for {
+		select {
+		case fss = <-fwl.Filesystems:
+			//spew.Dump(fss)
+			if fss.Src != nil && fss.Dst != nil {
+				break waitStart
+			}
+		}
 	}
 
 	ch := make(chan *backup.BackupProgress, 0)
