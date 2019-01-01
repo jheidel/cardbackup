@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cardbackup/filesystem"
+	"cardbackup/util"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -96,6 +97,11 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	if fs.Src == nil || fs.Dst == nil {
 		return fmt.Errorf("Missing backup source or destination")
 	}
+	if fs.Src.Used > fs.Dst.Available {
+		return fmt.Errorf("not enough space, need %s have %s",
+			util.BytesToString(fs.Src.Used),
+			util.BytesToString(fs.Dst.Available))
+	}
 
 	start := time.Now()
 	dirname := start.Format(DirFormat)
@@ -132,6 +138,8 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 		return err
 	}
 
+	logdonec := make(chan bool)
+
 	stdout := bufio.NewScanner(r)
 	stdout.Split(scanLines)
 	go func() {
@@ -150,6 +158,7 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 				}
 			}
 		}
+		logdonec <- true
 	}()
 
 	r, err = cmd.StderrPipe()
@@ -163,6 +172,7 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 			logw.WriteString(stderr.Text() + "\n")
 			logl.Unlock()
 		}
+		logdonec <- true
 	}()
 
 	if err := cmd.Start(); err != nil {
@@ -173,6 +183,19 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	log.Infof("rsync command completed with status %v", err)
 
 	flusher.Stop()
+
+	// bounded wait for log flush
+
+	waitDeadline := time.After(5 * time.Second)
+logwait:
+	for i := 0; i < 2; i++ {
+		select {
+		case <-logdonec:
+		case <-waitDeadline:
+			log.Warn("Deadline exceeded waiting for log completion")
+			break logwait
+		}
+	}
 
 	logl.Lock()
 	defer logl.Unlock()
@@ -190,10 +213,22 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	}
 
 	// Mark as done on source filesystem.
-	log.Info("writing completion marker")
+	log.Info("writing source completion marker")
 	if err := fs.Src.WriteCompletionMarker(); err != nil {
 		return fmt.Errorf("writing completion marker: %v", err)
 	}
 
+	// Mark as done on destination filesystem.
+	log.Info("writing destination success")
+	if err := fs.Dst.WriteSuccessFile(path.Join(dirname, "success.txt")); err != nil {
+		return fmt.Errorf("writing destination success: %v", err)
+	}
+
+	// Ensure all data is flushed since the user may now disconnect drives.
+	log.Info("running manual sync")
+	_, err = exec.Command("sync").Output()
+	if err != nil {
+		return fmt.Errorf("failed to sync: %v", err)
+	}
 	return nil
 }

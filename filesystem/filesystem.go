@@ -12,36 +12,43 @@ import (
 
 const (
 	MarkerFile = "backup-marker.txt"
+
+	// TODO: Use a better heuristic so this isn't needed.
+	DstThreshBytes = 750 << 30
 )
 
 type Filesystem struct {
 	Size, Used, Available int64
 	Path                  string
-	CompletionMarker      bool
+	// CompletionMarker      bool
 }
 
 func (fs *Filesystem) WriteCompletionMarker() error {
+	return fs.WriteSuccessFile(MarkerFile)
+}
+
+func (fs *Filesystem) WriteSuccessFile(relpath string) error {
 	ts := time.Now().Format(time.RFC3339)
 	v := fmt.Sprintf("Backup of these files completed on %v\n", ts)
-	mp := path.Join(fs.Path, MarkerFile)
+	mp := path.Join(fs.Path, relpath)
 	if err := ioutil.WriteFile(mp, []byte(v), 0660); err != nil {
 		return err
 	}
 	return nil
 }
 
-func hasMarker(fs *Filesystem) (bool, error) {
-	files, err := ioutil.ReadDir(fs.Path)
-	if err != nil {
-		return false, err
-	}
-	for _, f := range files {
-		if f.Name() == MarkerFile {
-			return true, nil
-		}
-	}
-	return false, nil
-}
+// func hasMarker(fs *Filesystem) (bool, error) {
+// 	files, err := ioutil.ReadDir(fs.Path)
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	for _, f := range files {
+// 		if f.Name() == MarkerFile {
+// 			return true, nil
+// 		}
+// 	}
+// 	return false, nil
+// }
 
 func scanAll() ([]*Filesystem, error) {
 	fss := []*Filesystem{}
@@ -100,14 +107,14 @@ func scanAll() ([]*Filesystem, error) {
 			Available: avail,
 			Path:      fields[5],
 		}
-		if fs.Path == "/" {
+		if fs.Path == "/" || fs.Path == "/media" || fs.Path == "/media/" {
 			continue
 		}
-		cm, err := hasMarker(fs)
-		if err != nil {
-			return []*Filesystem{}, fmt.Errorf("reading completion marker: %v", err)
-		}
-		fs.CompletionMarker = cm
+		// cm, err := hasMarker(fs)
+		// if err != nil {
+		// 	return []*Filesystem{}, fmt.Errorf("reading completion marker: %v", err)
+		// }
+		// fs.CompletionMarker = cm
 		fss = append(fss, fs)
 	}
 
@@ -118,11 +125,6 @@ type Filesystems struct {
 	Dst *Filesystem
 	Src *Filesystem
 }
-
-const (
-	// TODO: Increase to some sane value for a hard drive.
-	DstThreshBytes = 32 << 30
-)
 
 func Scan() (*Filesystems, error) {
 	fss, err := scanAll()

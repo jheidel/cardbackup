@@ -1,4 +1,4 @@
-package lcd
+package util
 
 import (
 	"fmt"

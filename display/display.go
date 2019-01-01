@@ -14,6 +14,7 @@ import (
 
 	"cardbackup/backup"
 	"cardbackup/filesystem"
+	"cardbackup/util"
 
 	"github.com/goiot/devices/monochromeoled"
 	"golang.org/x/exp/io/i2c"
@@ -180,17 +181,16 @@ func addProgressLabel(img *image.RGBA, percent int32, y int) {
 			},
 		},
 		image.NewUniform(color.RGBA{255, 255, 255, 255}), image.ZP, draw.Src)
-
-	// TODO progress bar
 }
 
 func fsStatus(fs *filesystem.Filesystem) string {
 	if fs == nil {
 		return "--"
 	}
-	return fmt.Sprintf("%s", BytesToString(fs.Used))
+	return fmt.Sprintf("%s", util.BytesToString(fs.Used))
 }
 
+// page1 displays filesystem detection status and instructions.
 func (d *Display) page1(line3 string) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, 128, 64))
 
@@ -204,9 +204,24 @@ func (d *Display) page1(line3 string) *image.RGBA {
 
 	addCenteredLabel(img, line3, 14*3+7)
 	return img
-
 }
 
+// dots creates an animated `...` string.
+func dots() string {
+	n := time.Now().UnixNano() * 2 / 1e9
+	switch {
+	case n%4 == 1:
+		return ".  "
+	case n%4 == 2:
+		return ".. "
+	case n%4 == 3:
+		return "..."
+	default:
+		return "   "
+	}
+}
+
+// page2 displays transfer status.
 func (d *Display) page2() *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, 128, 64))
 
@@ -216,18 +231,17 @@ func (d *Display) page2() *image.RGBA {
 	if d.txfrDone {
 		addCenteredLabel(img, "Done!", 14)
 	} else {
-		addCenteredLabel(img, "Transferring...", 14)
+		addCenteredLabel(img, "Transferring"+dots(), 14)
 	}
 	addProgressLabel(img, d.p.Percent, 14*2)
 
 	fmtDur := func(d time.Duration) string {
-		return TruncateSeconds(d).String()
+		return util.TruncateSeconds(d).String()
 	}
 
-	//l3 := fmt.Sprintf("E %s R %s", fmtDur(d.p.Elapsed), fmtDur(d.p.Remaining))
 	l3 := fmt.Sprintf("ETA: %s", fmtDur(d.p.Remaining))
 	if d.txfrDone {
-		l3 = fmt.Sprintf("%s in %s", BytesToString(d.p.BytesSent), fmtDur(d.p.Elapsed))
+		l3 = fmt.Sprintf("%s in %s", util.BytesToString(d.p.BytesSent), fmtDur(d.p.Elapsed))
 		addCenteredLabel(img, l3, 14*3)
 	} else {
 		addLabel(img, l3, 0, 14*3)
@@ -238,6 +252,7 @@ func (d *Display) page2() *image.RGBA {
 	return img
 }
 
+// pageError shows an error message after a failed transfer.
 func (d *Display) pageError() *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, 128, 64))
 

@@ -31,9 +31,11 @@ func loop() {
 	for {
 		lcd.ResetState()
 
+		// Wait for user to plug in card before continuing.
 		fss := <-filesystem.AfterConnect(fw)
 
-		// Short delay before starting to user can look at screen.
+		// Artificial short delay before starting so user can see
+		// card detected on screen.
 		time.Sleep(5 * time.Second)
 
 		ch := make(chan *backup.BackupProgress)
@@ -44,7 +46,6 @@ func loop() {
 		}()
 
 		if err := backup.Backup(fss, ch); err != nil {
-			// TODO print error to LCD.
 			log.Errorf("Backup error: %v", err)
 			lcd.SetError(err)
 		} else {
@@ -52,6 +53,7 @@ func loop() {
 			lcd.SetProgressDone()
 		}
 
+		// Wait for user to unplug card before continuing.
 		<-filesystem.AfterDisconnect(fw)
 	}
 }
@@ -59,5 +61,4 @@ func loop() {
 func main() {
 	log.Info("Start cardbackup")
 	loop()
-	log.Info("Quit cardbackup")
 }
