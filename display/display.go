@@ -56,6 +56,9 @@ func NewDisplay() (*Display, error) {
 }
 
 func (d *Display) SetFilesystems(fs *filesystem.Filesystems) {
+	if fs == nil {
+		return
+	}
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	d.fs = fs
@@ -183,13 +186,6 @@ func addProgressLabel(img *image.RGBA, percent int32, y int) {
 		image.NewUniform(color.RGBA{255, 255, 255, 255}), image.ZP, draw.Src)
 }
 
-func fsStatus(fs *filesystem.Filesystem) string {
-	if fs == nil {
-		return "--"
-	}
-	return fmt.Sprintf("%s", util.BytesToString(fs.Used))
-}
-
 // page1 displays filesystem detection status and instructions.
 func (d *Display) page1(line3 string) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, 128, 64))
@@ -197,8 +193,16 @@ func (d *Display) page1(line3 string) *image.RGBA {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 
-	l1 := fmt.Sprintf("Drive: %s", fsStatus(d.fs.Dst))
-	l2 := fmt.Sprintf("Card:  %s", fsStatus(d.fs.Src))
+	l1 := "Drive: --"
+	if d.fs != nil && d.fs.Dst != nil {
+		l1 = fmt.Sprintf("Drive: %s", util.BytesToString(d.fs.Dst.Used))
+	}
+
+	l2 := "Card:  --"
+	if d.fs != nil && d.fs.Src != nil {
+		l2 = fmt.Sprintf("Card:  %s", util.BytesToString(d.fs.Src.Used))
+	}
+
 	addLabel(img, l1, 0, 14)
 	addLabel(img, l2, 0, 14*2)
 
@@ -247,8 +251,10 @@ func (d *Display) page2() *image.RGBA {
 		addLabel(img, l3, 0, 14*3)
 	}
 
-	l4 := fmt.Sprintf("Drive: %s", fsStatus(d.fs.Dst))
-	addLabel(img, l4, 0, 14*4)
+	if d.fs != nil && d.fs.Dst != nil {
+		l4 := fmt.Sprintf("Drive: %s", util.BytesToString(d.fs.Dst.Used))
+		addLabel(img, l4, 0, 14*4)
+	}
 	return img
 }
 
@@ -293,6 +299,8 @@ func (d *Display) makeImage() *image.RGBA {
 	switch {
 	case d.drawErr != nil:
 		return d.pageError()
+	case d.fs == nil:
+		return d.page1("Please wait...")
 	case d.fs.Dst == nil:
 		return d.page1("* Connect Drive *")
 	case d.fs.Src == nil:
