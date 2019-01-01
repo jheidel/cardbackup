@@ -137,7 +137,10 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	go func() {
 		for stdout.Scan() {
 			if p := buildProgress(start, time.Now(), stdout.Text()); p != nil {
-				progress <- p
+				select {
+				case progress <- p:
+				default:
+				}
 			} else {
 				v := strings.TrimSpace(stdout.Text())
 				if len(v) > 0 {

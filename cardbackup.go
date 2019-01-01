@@ -4,6 +4,7 @@ import (
 	"cardbackup/backup"
 	"cardbackup/display"
 	"cardbackup/filesystem"
+	"time"
 
 	//"github.com/davecgh/go-spew/spew"
 	log "github.com/sirupsen/logrus"
@@ -21,33 +22,33 @@ func doWork() {
 		panic(err)
 	}
 
+	go func() {
+		lcdfw := fw.NewListener()
+		for {
+			lcd.SetFilesystems(<-lcdfw.Filesystems)
+		}
+	}()
+
 	fwl := fw.NewListener()
 	defer fwl.Close()
 
-	var fss *filesystem.Filesystems
-waitStart:
-	for {
-		select {
-		case fss = <-fwl.Filesystems:
-			//spew.Dump(fss)
-			if fss.Src != nil && fss.Dst != nil {
-				break waitStart
-			}
-		}
-	}
+	fss := <-filesystem.AfterConnect(fw)
 
 	ch := make(chan *backup.BackupProgress, 0)
 	go func() {
-		for _ = range ch {
-			//spew.Dump(p)
+		for {
+			lcd.SetProgress(<-ch)
 		}
-
 	}()
 
 	if err := backup.Backup(fss, ch); err != nil {
 		panic(err)
 	}
 	log.Info("Done!")
+
+	lcd.SetDone()
+
+	time.Sleep(30 * time.Second)
 }
 
 func main() {
