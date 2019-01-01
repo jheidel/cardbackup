@@ -4,16 +4,46 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
+	"time"
+)
+
+const (
+	MarkerFile = "backup-marker.txt"
 )
 
 type Filesystem struct {
 	Size, Used, Available int64
 	Path                  string
+	CompletionMarker      bool
 }
 
-func Scan() ([]*Filesystem, error) {
+func (fs *Filesystem) WriteCompletionMarker() error {
+	ts := time.Now().Format(time.RFC3339)
+	v := fmt.Sprintf("Backup of these files completed on %v\n", ts)
+	mp := path.Join(fs.Path, MarkerFile)
+	if err := ioutil.WriteFile(mp, []byte(v), 0660); err != nil {
+		return err
+	}
+	return nil
+}
+
+func hasMarker(fs *Filesystem) (bool, error) {
+	files, err := ioutil.ReadDir(fs.Path)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range files {
+		if f.Name() == MarkerFile {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func scanAll() ([]*Filesystem, error) {
 	fss := []*Filesystem{}
 
 	args := []string{
@@ -70,8 +100,50 @@ func Scan() ([]*Filesystem, error) {
 			Available: avail,
 			Path:      fields[5],
 		}
+		cm, err := hasMarker(fs)
+		if err != nil {
+			return []*Filesystem{}, fmt.Errorf("reading completion marker: %v", err)
+		}
+		fs.CompletionMarker = cm
 		fss = append(fss, fs)
 	}
 
 	return fss, nil
+}
+
+type Filesystems struct {
+	Dst *Filesystem
+	Src *Filesystem
+}
+
+const (
+	// TODO: Increase to some sane value for a hard drive.
+	DstThreshBytes = 32 << 30
+)
+
+func Scan() (*Filesystems, error) {
+	fss, err := scanAll()
+	if err != nil {
+		return nil, err
+	}
+
+	r := &Filesystems{}
+	// Heuristic: select one filesystem as destination and one as source based on size
+	// TODO: Improve hard drive detection.
+	for _, fs := range fss {
+		if fs.Size >= DstThreshBytes {
+			if r.Dst == nil {
+				r.Dst = fs
+			} else {
+				return nil, fmt.Errorf("Multiple filesystems above destination threshold")
+			}
+		} else {
+			if r.Src == nil {
+				r.Src = fs
+			} else {
+				return nil, fmt.Errorf("Multiple filesystems below destination threshold")
+			}
+		}
+	}
+	return r, nil
 }
