@@ -153,7 +153,7 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 				v := strings.TrimSpace(stdout.Text())
 				if len(v) > 0 {
 					logl.Lock()
-					logw.WriteString(v + "\n")
+					logw.WriteString(v + "\r\n")
 					logl.Unlock()
 				}
 			}
@@ -169,7 +169,7 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	go func() {
 		for stderr.Scan() {
 			logl.Lock()
-			logw.WriteString(stderr.Text() + "\n")
+			logw.WriteString(stderr.Text() + "\r\n")
 			logl.Unlock()
 		}
 		logdonec <- true
