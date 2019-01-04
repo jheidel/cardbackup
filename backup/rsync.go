@@ -110,6 +110,17 @@ func Backup(fs *filesystem.Filesystems, progress chan<- *BackupProgress) error {
 	dst := path.Join(fs.Dst.Path, dirname)
 	log.Infof("Starting backup from %v to %v", src, dst)
 
+	log.Infof("remounting dst writable")
+	if err := fs.Dst.RemountWritable(true); err != nil {
+		return err
+	}
+	defer func() {
+		// Remount readonly in the event of error.
+		if err := fs.Dst.RemountWritable(false); err != nil {
+			log.Warnf("%v", err)
+		}
+	}()
+
 	cmd := exec.Command("rsync", "-av", "--info=progress2", "--no-i-r", src, dst)
 
 	if err := os.Mkdir(dst, 0777); err != nil {
@@ -212,12 +223,6 @@ logwait:
 		return fmt.Errorf("backup failed: %v", status)
 	}
 
-	// Mark as done on source filesystem.
-	log.Info("writing source completion marker")
-	if err := fs.Src.WriteCompletionMarker(); err != nil {
-		return fmt.Errorf("writing completion marker: %v", err)
-	}
-
 	// Mark as done on destination filesystem.
 	log.Info("writing destination success")
 	if err := fs.Dst.WriteSuccessFile(path.Join(dirname, "success.txt")); err != nil {
@@ -230,5 +235,6 @@ logwait:
 	if err != nil {
 		return fmt.Errorf("failed to sync: %v", err)
 	}
+
 	return nil
 }

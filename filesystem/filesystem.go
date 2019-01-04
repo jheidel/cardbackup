@@ -20,11 +20,6 @@ const (
 type Filesystem struct {
 	Size, Used, Available int64
 	Path                  string
-	// CompletionMarker      bool
-}
-
-func (fs *Filesystem) WriteCompletionMarker() error {
-	return fs.WriteSuccessFile(MarkerFile)
 }
 
 func (fs *Filesystem) WriteSuccessFile(relpath string) error {
@@ -37,18 +32,17 @@ func (fs *Filesystem) WriteSuccessFile(relpath string) error {
 	return nil
 }
 
-// func hasMarker(fs *Filesystem) (bool, error) {
-// 	files, err := ioutil.ReadDir(fs.Path)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	for _, f := range files {
-// 		if f.Name() == MarkerFile {
-// 			return true, nil
-// 		}
-// 	}
-// 	return false, nil
-// }
+func (fs *Filesystem) RemountWritable(writable bool) error {
+	wc := "remount,ro"
+	if writable {
+		wc = "remount,rw"
+	}
+	_, err := exec.Command("sudo", "mount", "-o", wc, fs.Path).Output()
+	if err != nil {
+		return fmt.Errorf("remount writable %v: %v", writable, err)
+	}
+	return nil
+}
 
 func scanAll() ([]*Filesystem, error) {
 	fss := []*Filesystem{}
@@ -110,11 +104,6 @@ func scanAll() ([]*Filesystem, error) {
 		if fs.Path == "/" || fs.Path == "/media" || fs.Path == "/media/" {
 			continue
 		}
-		// cm, err := hasMarker(fs)
-		// if err != nil {
-		// 	return []*Filesystem{}, fmt.Errorf("reading completion marker: %v", err)
-		// }
-		// fs.CompletionMarker = cm
 		fss = append(fss, fs)
 	}
 
